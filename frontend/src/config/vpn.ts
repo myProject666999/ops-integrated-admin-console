@@ -5,6 +5,7 @@ export const VPN_SECTION_VALUES = [
   '长亮控股^root',
   '长亮合度^root',
   '长亮金服^root',
+  '长亮智能^root',
   'temp^root',
   '长亮科技^root',
   '共享服务中心^长亮科技^root',

@@ -152,6 +152,7 @@ var vpnSectionAll = []string{
 	"长亮控股^root",
 	"长亮合度^root",
 	"长亮金服^root",
+	"长亮智能^root",
 	"Manager^root",
 	"temp^root",
 	"长亮科技^root",
@@ -601,7 +602,7 @@ func vpnDeleteUsers(client *ssh.Client, p map[string]interface{}) projectResult 
 			rlogs = append(rlogs, "", "正在前往防火墙系统执行删除vpn用户....", "")
 			rcli, loginErr := vpnLogin(fwAccount, fwPassword, runtimeCfg.FirewallSSHAddr, 22)
 			if loginErr != nil {
-					rlogs = append(rlogs, "远程防火墙系统失败！请检查用户名密码或访问权限！")
+				rlogs = append(rlogs, "远程防火墙系统失败！请检查用户名密码或访问权限！")
 				for _, u := range users {
 					ritems = append(ritems, map[string]interface{}{"vpn_user": u, "ok": false, "output": "", "error": errString(loginErr)})
 				}
