@@ -163,7 +163,7 @@ func (s *server) handleWindowCloseStart(w http.ResponseWriter, r *http.Request, 
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "请求体格式错误"})
 		return
 	}
-	s.scheduleBrowserCloseStartLog(u, req)
+	s.scheduleBrowserCloseLifecycle(u, req)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -173,7 +173,12 @@ func (s *server) handleWindowCloseCancel(w http.ResponseWriter, r *http.Request,
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "请求体格式错误"})
 		return
 	}
-	if s.cancelPendingBrowserCloseStartLog(u.Token) {
+	found, started := s.cancelBrowserCloseState(u.Token)
+	if !found {
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+	if !started {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
 	}
@@ -189,7 +194,7 @@ func (s *server) handleLogout(w http.ResponseWriter, r *http.Request, u authedUs
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "请求体格式错误"})
 		return
 	}
-	s.cancelPendingBrowserCloseStartLog(u.Token)
+	s.cancelBrowserCloseStatesByUser(u.ID)
 	s.cleanupUserAuthTokens(u.ID)
 	if strings.TrimSpace(req.Reason) == "reopen_timeout" {
 		detail := formatBrowserCloseEventDetail("页面关闭超时，已清理该账号全部 Token 与项目会话缓存", req)
@@ -677,93 +682,178 @@ func (s *server) logAction(userID int64, username, action, projectType, detail s
 	_, _ = s.db.Exec(`INSERT INTO operation_logs(user_id,username,action,project_type,detail,created_at) VALUES(?,?,?,?,?,?)`, userID, username, action, projectType, detail, nowStr())
 }
 
-func (s *server) scheduleBrowserCloseStartLog(u authedUser, req browserCloseEventReq) {
+func (s *server) scheduleBrowserCloseLifecycle(u authedUser, req browserCloseEventReq) {
 	token := strings.TrimSpace(u.Token)
+	req = normalizeBrowserCloseEventReq(req)
 	if token == "" {
 		detail := formatBrowserCloseEventDetail("检测到浏览器最后一个系统页面已关闭，开始计时", req)
 		s.logAction(u.ID, u.Username, "browser_close_timer_started", "", detail)
 		fmt.Printf("[browser-close] user=%s detail=%s\n", u.Username, detail)
+		s.executeBrowserCloseTimeout(u, req)
 		return
 	}
 
-	entry := pendingBrowserCloseLog{
+	delayUntilTimeout := time.Until(time.UnixMilli(req.TimeoutAtMS))
+	if delayUntilTimeout < 0 {
+		delayUntilTimeout = 0
+	}
+
+	state := &browserCloseState{
 		user: u,
 		req:  req,
 	}
-
-	s.browserCloseLogMu.Lock()
-	s.pendingBrowserCloseLogs[token] = &entry
-	s.browserCloseLogMu.Unlock()
-
-	expectedClosedAtMS := req.ClosedAtMS
-	time.AfterFunc(browserCloseLogGracePeriod, func() {
-		s.flushPendingBrowserCloseStartLog(token, expectedClosedAtMS)
+	state.startTimer = time.AfterFunc(browserCloseLogGracePeriod, func() {
+		s.activateBrowserCloseStartLog(token, req.ClosedAtMS)
 	})
+	state.timeoutTimer = time.AfterFunc(delayUntilTimeout, func() {
+		s.handleBrowserCloseTimeout(token, req.ClosedAtMS)
+	})
+
+	s.browserCloseLogMu.Lock()
+	if old := s.browserCloseStates[token]; old != nil {
+		stopBrowserCloseTimer(old.startTimer)
+		stopBrowserCloseTimer(old.timeoutTimer)
+	}
+	s.browserCloseStates[token] = state
+	s.browserCloseLogMu.Unlock()
 }
 
-func (s *server) flushPendingBrowserCloseStartLog(token string, expectedClosedAtMS int64) {
+func (s *server) activateBrowserCloseStartLog(token string, expectedClosedAtMS int64) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return
 	}
 
 	s.browserCloseLogMu.Lock()
-	entry, ok := s.pendingBrowserCloseLogs[token]
-	if ok && entry != nil && entry.req.ClosedAtMS == expectedClosedAtMS {
-		delete(s.pendingBrowserCloseLogs, token)
-	} else {
-		ok = false
+	state := s.browserCloseStates[token]
+	if state == nil || state.req.ClosedAtMS != expectedClosedAtMS || state.startedLog {
+		s.browserCloseLogMu.Unlock()
+		return
+	}
+	state.startedLog = true
+	user := state.user
+	req := state.req
+	s.browserCloseLogMu.Unlock()
+
+	detail := formatBrowserCloseEventDetail("检测到浏览器最后一个系统页面已关闭，开始计时", req)
+	s.logAction(user.ID, user.Username, "browser_close_timer_started", "", detail)
+	fmt.Printf("[browser-close] user=%s detail=%s\n", user.Username, detail)
+}
+
+func (s *server) handleBrowserCloseTimeout(token string, expectedClosedAtMS int64) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return
+	}
+
+	s.browserCloseLogMu.Lock()
+	state := s.browserCloseStates[token]
+	if state == nil || state.req.ClosedAtMS != expectedClosedAtMS {
+		s.browserCloseLogMu.Unlock()
+		return
+	}
+	delete(s.browserCloseStates, token)
+	user := state.user
+	req := state.req
+	started := state.startedLog
+	s.browserCloseLogMu.Unlock()
+
+	stopBrowserCloseTimer(state.startTimer)
+	stopBrowserCloseTimer(state.timeoutTimer)
+
+	if !started {
+		detail := formatBrowserCloseEventDetail("检测到浏览器最后一个系统页面已关闭，开始计时", req)
+		s.logAction(user.ID, user.Username, "browser_close_timer_started", "", detail)
+		fmt.Printf("[browser-close] user=%s detail=%s\n", user.Username, detail)
+	}
+
+	s.executeBrowserCloseTimeout(user, req)
+}
+
+func (s *server) executeBrowserCloseTimeout(u authedUser, req browserCloseEventReq) {
+	s.cancelBrowserCloseStatesByUser(u.ID)
+	s.cleanupUserAuthTokens(u.ID)
+	detail := formatBrowserCloseEventDetail("页面关闭超时，后端已自动清理该账号全部 Token 与项目会话缓存", req)
+	s.logAction(u.ID, u.Username, "logout", "", detail)
+	fmt.Printf("[browser-close-timeout-auto] user=%s detail=%s\n", u.Username, detail)
+}
+
+func (s *server) cancelBrowserCloseState(token string) (bool, bool) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return false, false
+	}
+
+	s.browserCloseLogMu.Lock()
+	state := s.browserCloseStates[token]
+	if state != nil {
+		delete(s.browserCloseStates, token)
 	}
 	s.browserCloseLogMu.Unlock()
-	if !ok || entry == nil {
+	if state == nil {
+		return false, false
+	}
+
+	stopBrowserCloseTimer(state.startTimer)
+	stopBrowserCloseTimer(state.timeoutTimer)
+	return true, state.startedLog
+}
+
+func (s *server) cancelBrowserCloseStatesByUser(userID int64) {
+	if userID <= 0 {
 		return
 	}
 
-	detail := formatBrowserCloseEventDetail("检测到浏览器最后一个系统页面已关闭，开始计时", entry.req)
-	s.logAction(entry.user.ID, entry.user.Username, "browser_close_timer_started", "", detail)
-	fmt.Printf("[browser-close] user=%s detail=%s\n", entry.user.Username, detail)
-}
-
-func (s *server) cancelPendingBrowserCloseStartLog(token string) bool {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return false
-	}
-
+	toStop := make([]*browserCloseState, 0)
 	s.browserCloseLogMu.Lock()
-	defer s.browserCloseLogMu.Unlock()
-	if _, ok := s.pendingBrowserCloseLogs[token]; !ok {
-		return false
+	for token, state := range s.browserCloseStates {
+		if state == nil || state.user.ID != userID {
+			continue
+		}
+		toStop = append(toStop, state)
+		delete(s.browserCloseStates, token)
 	}
-	delete(s.pendingBrowserCloseLogs, token)
-	return true
+	s.browserCloseLogMu.Unlock()
+
+	for _, state := range toStop {
+		stopBrowserCloseTimer(state.startTimer)
+		stopBrowserCloseTimer(state.timeoutTimer)
+	}
 }
 
-func formatBrowserCloseEventDetail(prefix string, req browserCloseEventReq) string {
+func normalizeBrowserCloseEventReq(req browserCloseEventReq) browserCloseEventReq {
 	idleTTLSeconds := req.IdleTTLSeconds
 	if idleTTLSeconds <= 0 {
 		idleTTLSeconds = int(runtimeCfg.SessionIdleTTL.Seconds())
 	}
+	req.IdleTTLSeconds = idleTTLSeconds
+	if req.TimeoutAtMS <= 0 && req.ClosedAtMS > 0 && idleTTLSeconds > 0 {
+		req.TimeoutAtMS = req.ClosedAtMS + int64(idleTTLSeconds)*1000
+	}
+	return req
+}
 
+func stopBrowserCloseTimer(timer *time.Timer) {
+	if timer == nil {
+		return
+	}
+	timer.Stop()
+}
+
+func formatBrowserCloseEventDetail(prefix string, req browserCloseEventReq) string {
+	req = normalizeBrowserCloseEventReq(req)
+	idleTTLSeconds := req.IdleTTLSeconds
 	closedAt := formatUnixMilliForLog(req.ClosedAtMS)
 	timeoutAtMS := req.TimeoutAtMS
-	if timeoutAtMS <= 0 && req.ClosedAtMS > 0 && idleTTLSeconds > 0 {
-		timeoutAtMS = req.ClosedAtMS + int64(idleTTLSeconds)*1000
-	}
 	timeoutAt := formatUnixMilliForLog(timeoutAtMS)
 	return fmt.Sprintf("%s，开始触发时间：%s，超时时长：%d 秒，超时时间：%s", prefix, closedAt, idleTTLSeconds, timeoutAt)
 }
 
 func formatBrowserCloseCancelDetail(req browserCloseEventReq) string {
+	req = normalizeBrowserCloseEventReq(req)
 	idleTTLSeconds := req.IdleTTLSeconds
-	if idleTTLSeconds <= 0 {
-		idleTTLSeconds = int(runtimeCfg.SessionIdleTTL.Seconds())
-	}
 	closedAt := formatUnixMilliForLog(req.ClosedAtMS)
 	timeoutAtMS := req.TimeoutAtMS
-	if timeoutAtMS <= 0 && req.ClosedAtMS > 0 && idleTTLSeconds > 0 {
-		timeoutAtMS = req.ClosedAtMS + int64(idleTTLSeconds)*1000
-	}
 	timeoutAt := formatUnixMilliForLog(timeoutAtMS)
 	reopenedAt := formatUnixMilliForLog(req.ReopenedAtMS)
 	return fmt.Sprintf("浏览器系统页面已重新打开，取消页面关闭超时计时，开始触发时间：%s，超时时长：%d 秒，原超时时间：%s，重新打开时间：%s", closedAt, idleTTLSeconds, timeoutAt, reopenedAt)

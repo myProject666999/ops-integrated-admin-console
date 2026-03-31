@@ -35,14 +35,14 @@ type appConfig struct {
 }
 
 type server struct {
-	db                      *sql.DB
-	tokenTTL                time.Duration
-	cfg                     appConfig
-	jobMu                   sync.Mutex
-	jobs                    map[string]*asyncOperateJob
-	projectSessions         *projectSessionManager
-	browserCloseLogMu       sync.Mutex
-	pendingBrowserCloseLogs map[string]*pendingBrowserCloseLog
+	db                 *sql.DB
+	tokenTTL           time.Duration
+	cfg                appConfig
+	jobMu              sync.Mutex
+	jobs               map[string]*asyncOperateJob
+	projectSessions    *projectSessionManager
+	browserCloseLogMu  sync.Mutex
+	browserCloseStates map[string]*browserCloseState
 }
 
 type apiError struct {
@@ -103,9 +103,12 @@ type logRow struct {
 	CreatedAt   string `json:"created_at"`
 }
 
-type pendingBrowserCloseLog struct {
-	user authedUser
-	req  browserCloseEventReq
+type browserCloseState struct {
+	user         authedUser
+	req          browserCloseEventReq
+	startedLog   bool
+	startTimer   *time.Timer
+	timeoutTimer *time.Timer
 }
 
 var runtimeCfg appConfig
@@ -145,12 +148,12 @@ func Run() {
 	}
 
 	srv := &server{
-		db:                      db,
-		tokenTTL:                24 * time.Hour,
-		cfg:                     cfg,
-		jobs:                    make(map[string]*asyncOperateJob),
-		projectSessions:         newProjectSessionManager(),
-		pendingBrowserCloseLogs: make(map[string]*pendingBrowserCloseLog),
+		db:                 db,
+		tokenTTL:           24 * time.Hour,
+		cfg:                cfg,
+		jobs:               make(map[string]*asyncOperateJob),
+		projectSessions:    newProjectSessionManager(),
+		browserCloseStates: make(map[string]*browserCloseState),
 	}
 
 	addr := os.Getenv("ADDR")
