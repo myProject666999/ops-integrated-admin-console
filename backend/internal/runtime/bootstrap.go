@@ -3,7 +3,6 @@ package runtime
 import (
 	"database/sql"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -13,10 +12,6 @@ import (
 
 	_ "modernc.org/sqlite"
 )
-
-type contextKey string
-
-const userKey contextKey = "authed_user"
 
 type authedUser struct {
 	ID       int64
@@ -49,50 +44,6 @@ type server struct {
 type apiError struct {
 	Error string `json:"error"`
 }
-
-type loginReq struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-type registerReq struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-type loginResp struct {
-	Token                string `json:"token"`
-	Username             string `json:"username"`
-	ExpireAt             string `json:"expire_at"`
-	DefaultPwd           bool   `json:"default_pwd"`
-	ProjectCacheTTLInSec int    `json:"project_cache_ttl_seconds"`
-	SessionIdleTTLInSec  int    `json:"session_idle_ttl_seconds"`
-}
-
-type changePasswordReq struct {
-	OldPassword string `json:"old_password"`
-	NewPassword string `json:"new_password"`
-}
-
-type browserCloseEventReq struct {
-	Reason         string `json:"reason"`
-	ClosedAtMS     int64  `json:"closed_at_ms"`
-	TimeoutAtMS    int64  `json:"timeout_at_ms"`
-	ReopenedAtMS   int64  `json:"reopened_at_ms"`
-	IdleTTLSeconds int    `json:"idle_ttl_seconds"`
-}
-
-type projectCredentialReq struct {
-	Account  string `json:"account"`
-	Password string `json:"password"`
-}
-
-type operateReq struct {
-	Action string                 `json:"action"`
-	Params map[string]interface{} `json:"params"`
-}
-
-type projectResult = project.Result
 
 type logRow struct {
 	ID          int64  `json:"id"`
@@ -162,9 +113,9 @@ func Run() {
 		addr = ":8080"
 	}
 
-	h := corsMiddleware(http.HandlerFunc(srv.route))
+	router := srv.setupRouter()
 	log.Printf("backend started on %s, sqlite=%s", addr, dbPath)
-	if err = http.ListenAndServe(addr, h); err != nil {
+	if err = router.Run(addr); err != nil {
 		log.Fatalf("listen failed: %v", err)
 	}
 }
