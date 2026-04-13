@@ -24,6 +24,14 @@ func (s *server) route(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		s.handleAPI(w, r)
+		return
+	}
+	s.serveStatic(w, r)
+}
+
+func (s *server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/api/auth/login" && r.Method == http.MethodPost {
 		s.handleLogin(w, r)
 		return
@@ -864,4 +872,76 @@ func formatUnixMilliForLog(ms int64) string {
 		return "-"
 	}
 	return time.UnixMilli(ms).Format(time.RFC3339)
+}
+
+func (s *server) serveStatic(w http.ResponseWriter, r *http.Request) {
+	staticDir := s.cfg.StaticDir
+	if staticDir == "" {
+		staticDir = "./static"
+	}
+	staticDir = filepath.Clean(staticDir)
+
+	requestPath := r.URL.Path
+	if requestPath == "/" {
+		requestPath = "/index.html"
+	}
+
+	filePath := filepath.Join(staticDir, requestPath)
+	filePath = filepath.Clean(filePath)
+
+	if !strings.HasPrefix(filePath, staticDir+string(filepath.Separator)) && filePath != staticDir {
+		http.NotFound(w, r)
+		return
+	}
+
+	info, err := os.Stat(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			indexPath := filepath.Join(staticDir, "index.html")
+			if _, indexErr := os.Stat(indexPath); indexErr == nil {
+				http.ServeFile(w, r, indexPath)
+				return
+			}
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if info.IsDir() {
+		indexPath := filepath.Join(filePath, "index.html")
+		if _, indexErr := os.Stat(indexPath); indexErr == nil {
+			http.ServeFile(w, r, indexPath)
+			return
+		}
+		http.NotFound(w, r)
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(filePath))
+	switch ext {
+	case ".js":
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	case ".css":
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	case ".html":
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	case ".json":
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	case ".svg":
+		w.Header().Set("Content-Type", "image/svg+xml")
+	case ".png":
+		w.Header().Set("Content-Type", "image/png")
+	case ".jpg", ".jpeg":
+		w.Header().Set("Content-Type", "image/jpeg")
+	case ".ico":
+		w.Header().Set("Content-Type", "image/x-icon")
+	case ".woff", ".woff2":
+		w.Header().Set("Content-Type", "font/woff2")
+	case ".ttf":
+		w.Header().Set("Content-Type", "font/ttf")
+	}
+
+	http.ServeFile(w, r, filePath)
 }

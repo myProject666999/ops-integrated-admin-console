@@ -52,6 +52,10 @@ func loadAppConfig() appConfig {
 	if idleMinutes <= 0 {
 		idleMinutes = 60
 	}
+	staticDir := strings.TrimSpace(envString("STATIC_DIR", "./static"))
+	if staticDir == "" {
+		staticDir = "./static"
+	}
 	return appConfig{
 		ADAPIURL:        normalizeBaseURL(envString("AD_API_URL", "http://ad.example.internal/")),
 		PrintAPIURL:     normalizeBaseURL(envString("PRINT_API_URL", "http://print.example.internal/printhub/")),
@@ -60,6 +64,7 @@ func loadAppConfig() appConfig {
 		CredentialKey:   envString("CREDENTIAL_SECRET", "change-me-ops-credential-secret"),
 		ProjectCacheTTL: time.Duration(ttlMinutes) * time.Minute,
 		SessionIdleTTL:  time.Duration(idleMinutes) * time.Minute,
+		StaticDir:       staticDir,
 	}
 }
 

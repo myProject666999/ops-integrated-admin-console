@@ -32,6 +32,7 @@ type appConfig struct {
 	CredentialKey   string
 	ProjectCacheTTL time.Duration
 	SessionIdleTTL  time.Duration
+	StaticDir       string
 }
 
 type server struct {
