@@ -2,17 +2,21 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
+RUN npm config set registry https://registry.npmmirror.com
+
 COPY frontend/package*.json ./
 RUN npm install
 
 COPY frontend/ ./
 RUN npm run build
 
-FROM golang:1.26-alpine AS backend-builder
+FROM golang:alpine AS backend-builder
 
 WORKDIR /app
 
 RUN apk add --no-cache gcc musl-dev
+
+ENV GOPROXY=https://goproxy.cn,direct
 
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download

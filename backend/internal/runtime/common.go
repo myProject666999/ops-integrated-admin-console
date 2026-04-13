@@ -61,18 +61,6 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func extractBearerToken(authHeader string) string {
-	authHeader = strings.TrimSpace(authHeader)
-	if authHeader == "" {
-		return ""
-	}
-	const prefix = "Bearer "
-	if !strings.HasPrefix(strings.ToLower(authHeader), strings.ToLower(prefix)) {
-		return ""
-	}
-	return strings.TrimSpace(authHeader[len(prefix):])
-}
-
 func randomToken(n int) (string, error) {
 	buf := make([]byte, n)
 	if _, err := crand.Read(buf); err != nil {

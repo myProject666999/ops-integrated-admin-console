@@ -1,38 +1,25 @@
 import JSEncrypt from 'jsencrypt'
-import { fetchCryptoConfig, clearCryptoConfigCache } from './request'
 
-// 加密配置
 interface CryptoConfig {
   enabled: boolean
   publicKey: string
 }
 
-// 缓存加密配置
 let cryptoConfig: CryptoConfig | null = null
 
-/**
- * 获取加密配置
- */
 export async function getCryptoConfig(): Promise<CryptoConfig> {
   if (cryptoConfig) {
     return cryptoConfig
   }
   
-  cryptoConfig = await fetchCryptoConfig()
+  cryptoConfig = { enabled: false, publicKey: '' }
   return cryptoConfig
 }
 
-/**
- * 清除缓存的配置
- */
 export function clearCryptoConfig() {
   cryptoConfig = null
-  clearCryptoConfigCache()
 }
 
-/**
- * RSA加密
- */
 export function rsaEncrypt(data: string, publicKey: string): string {
   const encrypt = new JSEncrypt()
   encrypt.setPublicKey(publicKey)
@@ -43,9 +30,6 @@ export function rsaEncrypt(data: string, publicKey: string): string {
   return encrypted
 }
 
-/**
- * RSA解密（使用公钥解密私钥加密的数据）
- */
 export function rsaDecrypt(data: string, publicKey: string): string {
   const decrypt = new JSEncrypt()
   decrypt.setPublicKey(publicKey)
@@ -56,9 +40,6 @@ export function rsaDecrypt(data: string, publicKey: string): string {
   return decrypted
 }
 
-/**
- * 加密密码字段
- */
 export async function encryptPassword(password: string): Promise<string> {
   const config = await getCryptoConfig()
   
@@ -69,9 +50,6 @@ export async function encryptPassword(password: string): Promise<string> {
   return rsaEncrypt(password, config.publicKey)
 }
 
-/**
- * 加密对象中的密码字段
- */
 export async function encryptPasswordFields<T extends Record<string, any>>(
   data: T,
   fields: string[] = ['password', 'oldPassword', 'newPassword']
@@ -93,9 +71,6 @@ export async function encryptPasswordFields<T extends Record<string, any>>(
   return result
 }
 
-/**
- * 检查是否启用加密
- */
 export async function isEncryptEnabled(): Promise<boolean> {
   const config = await getCryptoConfig()
   return config.enabled

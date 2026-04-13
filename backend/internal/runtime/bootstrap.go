@@ -3,7 +3,6 @@ package runtime
 import (
 	"database/sql"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -162,9 +161,9 @@ func Run() {
 		addr = ":8080"
 	}
 
-	h := corsMiddleware(http.HandlerFunc(srv.route))
+	router := setupRouter(srv)
 	log.Printf("backend started on %s, sqlite=%s", addr, dbPath)
-	if err = http.ListenAndServe(addr, h); err != nil {
+	if err = router.Run(addr); err != nil {
 		log.Fatalf("listen failed: %v", err)
 	}
 }
