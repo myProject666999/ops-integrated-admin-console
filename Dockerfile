@@ -5,7 +5,7 @@ FROM mcr.microsoft.com/windows/servercore:ltsc2022
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
-WORKDIR C:C:/app
+WORKDIR C:/app
 
 # 复制预编译的Windows后端可执行文件
 COPY backend/ops-admin-backend.exe ./
