@@ -5,7 +5,7 @@ FROM mcr.microsoft.com/windows/servercore:ltsc2022
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
-WORKDIR /app
+WORKDIR C:C:/app
 
 # 复制预编译的Windows后端可执行文件
 COPY backend/ops-admin-backend.exe ./
@@ -14,7 +14,7 @@ COPY backend/data ./data
 COPY frontend/dist ./static
 
 # 创建数据库目录
-RUN New-Item -ItemType Directory -Force -Path /app/db
+RUN New-Item -ItemType Directory -Force -Path C:/app/db
 
 ENV ADDR=0.0.0.0:8080
 ENV TZ=Asia/Shanghai
