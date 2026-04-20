@@ -11,8 +11,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"ops-admin-backend/internal/project"
+
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
+
+type projectResult = project.Result
 
 func validProjectType(t string) bool {
 	switch t {
@@ -123,19 +127,6 @@ func looksLikeMojibake(text string) bool {
 
 func mojibakeScore(text string) int {
 	return strings.Count(text, string(utf8.RuneError))
-}
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 func toBool(v interface{}) bool {
