@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <n-layout :has-sider="!isMobile" class="page-layout">
     <n-layout-sider v-if="!isMobile" width="220" bordered class="main-sider">
       <div class="sider-title">运维控制台</div>
@@ -336,32 +336,14 @@ import {
   NFormItem,
   NInput,
   NButton,
-  NTable,
   NTooltip,
   NModal,
   NSelect,
   NPagination,
-  NProgress,
-  NSwitch,
-  NUpload,
-  NUploadDragger,
-  NDrawer,
-  NDrawerContent,
   useMessage,
 } from 'naive-ui'
-import { getProjectCacheDeadlineKey, getProjectCacheReloginLockKey, useAuthStore } from '@/stores/auth'
-import { apiRequest, isAuthExpiredError } from '@/api/client'
-import { AD_ORG_UNIT_VALUES } from '@/config/ad'
-import {
-  PRINT_GENDER_OPTIONS_ADD,
-  PRINT_GENDER_OPTIONS_MODIFY,
-  PRINT_ROLE_NAME_TO_ID,
-  PRINT_ROLE_OPTIONS,
-  PRINT_SEARCH_KEY_OPTIONS,
-  PRINT_SECTION_VALUES,
-  PRINT_STATUS_OPTIONS,
-} from '@/config/print'
-import { VPN_SECTION_VALUES } from '@/config/vpn'
+import { useAuthStore } from '@/stores/auth'
+import { apiRequest } from '@/api/client'
 
 type FieldPhase = 'query' | 'edit' | 'all'
 type Field = {

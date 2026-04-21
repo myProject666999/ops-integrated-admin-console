@@ -1,0 +1,19 @@
+FROM alpine:3.19
+
+WORKDIR /app
+
+RUN apk add --no-cache ca-certificates tzdata sqlite-libs
+
+COPY backend/static ./static
+COPY backend/data ./data
+COPY ops-admin-backend-linux ./ops-admin-backend
+
+RUN chmod +x ./ops-admin-backend && mkdir -p /app/db
+
+ENV ADDR=0.0.0.0:8080
+ENV TZ=Asia/Shanghai
+ENV STATIC_DIR=./static
+
+EXPOSE 8080
+
+CMD ["./ops-admin-backend"]

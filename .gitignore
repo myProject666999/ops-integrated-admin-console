@@ -12,6 +12,7 @@ backend/*.exe
 backend/db/*.db
 backend/data/ad/uploads/*
 backend/.env
+backend/static/
 
 # Frontend
 frontend/node_modules/
